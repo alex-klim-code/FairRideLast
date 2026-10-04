@@ -1,0 +1,1 @@
+export * from '@workspace/fairride-core/passenger-ride';

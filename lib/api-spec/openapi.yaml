@@ -1,0 +1,603 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+paths:
+  /transit/stops:
+    get:
+      operationId: getNearbyTransitStops
+      summary: Nearby Krakow stops from official ZTP schedules, never demo data
+      parameters:
+        - { name: lat, in: query, required: true, schema: { type: number, minimum: -90, maximum: 90 } }
+        - { name: lng, in: query, required: true, schema: { type: number, minimum: -180, maximum: 180 } }
+        - { name: radius, in: query, schema: { type: integer, minimum: 100, maximum: 3000, default: 1500 } }
+      responses:
+        "200":
+          description: Stops in the requested area
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NearbyTransitStops" }
+        "400": { description: Invalid map position }
+        "503": { description: Official timetable loading or unavailable }
+  /transit/stops/{stopId}/departures:
+    get:
+      operationId: getTransitStopDepartures
+      summary: Upcoming Krakow departures with fresh ZTP predictions or explicitly scheduled times
+      parameters:
+        - { name: stopId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Departures for the actual service date in Europe/Warsaw
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TransitStopDepartures" }
+        "404": { description: Unknown stop }
+        "503": { description: Official timetable loading or unavailable }
+  /transport/account:
+    get:
+      operationId: getTransportAccount
+      summary: Verified account and current server-managed role; never a demo cookie
+      responses:
+        "200":
+          description: Verified account
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DemoActor" }
+        "401": { description: Verified sign-in required }
+        "403": { description: Account suspended or email not verified }
+  /transport/staff:
+    get:
+      operationId: getTransportStaff
+      summary: Admin-only staff permissions
+      responses:
+        "200":
+          description: Staff permission records
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/StaffPermission" }
+        "403": { description: Verified Admin required }
+  /transport/staff/{userId}:
+    put:
+      operationId: setTransportStaff
+      summary: Admin assigns or revokes a role for an existing verified Clerk user
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StaffPermissionInput" }
+      responses:
+        "200":
+          description: Saved permission
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StaffPermission" }
+        "403": { description: Verified Admin required }
+        "409": { description: Cannot remove last active Admin }
+  /transport/session:
+    get:
+      operationId: getDemoTransportSession
+      summary: Current signed demo-role session (not verified staff authentication)
+      responses:
+        "200":
+          description: Demo actor
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DemoActor" }
+        "401":
+          description: No demo role selected
+    post:
+      operationId: createDemoTransportSession
+      summary: Select a role in the explicitly public demo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DemoSessionInput" }
+      responses:
+        "200":
+          description: Signed demo actor
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DemoActor" }
+    delete:
+      operationId: deleteDemoTransportSession
+      summary: Clear demo role while retaining the anonymous browser identity
+      responses:
+        "204": { description: Signed out }
+  /transport/catalog:
+    get:
+      operationId: getTransportCatalog
+      summary: City configuration and explicitly labelled transport provider data
+      responses:
+        "200":
+          description: Catalog
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TransportCatalog" }
+  /transport/workspace:
+    get:
+      operationId: getTransportWorkspace
+      summary: Shared fleet, inspection history and role-scoped check-ins
+      responses:
+        "200":
+          description: Current server state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TransportWorkspace" }
+        "401": { description: Demo session required }
+        "503": { description: State unavailable; no local lock fallback }
+  /transport/vehicles/{vehicleId}/inspection:
+    post:
+      operationId: startVehicleInspection
+      summary: Atomically lock one physical vehicle, staff roles only
+      parameters:
+        - { name: vehicleId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TransportOperation" }
+      responses:
+        "200":
+          description: Inspection started or idempotent replay
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InspectionSession" }
+        "403": { description: Staff role required }
+        "409": { description: Vehicle unavailable or already inspecting }
+  /transport/inspections/{inspectionId}/end:
+    post:
+      operationId: endVehicleInspection
+      summary: Finish own inspection; Admin may finish any
+      parameters:
+        - { name: inspectionId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Inspection finished
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InspectionSession" }
+        "403": { description: Not authorized to end this inspection }
+  /transport/check-ins:
+    post:
+      operationId: createVehicleCheckIn
+      summary: Passenger check-in; locked vehicles rejected and attempt counted atomically
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VehicleCheckInInput" }
+      responses:
+        "200":
+          description: Check-in created or idempotent replay
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VehicleCheckIn" }
+        "423":
+          description: Ticket inspection in progress; new check-in not created
+        "409": { description: Out of service or existing active journey }
+        "403": { description: Passenger role required }
+  /transport/check-ins/{checkInId}/checkout:
+    post:
+      operationId: checkOutVehicle
+      summary: Check out own existing journey even while the vehicle is locked
+      parameters:
+        - { name: checkInId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Checked out
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VehicleCheckIn" }
+        "403": { description: Journey ownership required }
+  /maps/config:
+    get:
+      operationId: getGoogleMapsConfig
+      summary: Restricted public browser map configuration (never the Routes API key)
+      responses:
+        "200":
+          description: Browser map configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GoogleMapsConfig"
+        "503":
+          description: Browser map key is missing
+  /transit/routes:
+    post:
+      operationId: computeTransitRoutes
+      summary: Real Google transit itineraries from device coordinates
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransitInput"
+      responses:
+        "200":
+          description: Real transit routes, or an empty routes list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransitResults"
+        "400":
+          description: Invalid coordinates
+        "429":
+          description: Request limit reached
+        "503":
+          description: Google configuration or service unavailable
+  /geocoding/reverse:
+    post:
+      operationId: reverseAddress
+      summary: Resolve real GPS coordinates using the shared geocoding capacity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransitCoordinate"
+      responses:
+        "200":
+          description: Sanitized GeoJSON address results, possibly empty
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AddressSearchResults"
+        "400":
+          description: Invalid coordinates
+        "429":
+          description: Shared geocoding capacity exhausted
+        "503":
+          description: Address resolution unavailable
+  /geocoding/search:
+    post:
+      operationId: searchAddresses
+      summary: Search addresses through the capacity-controlled Geoapify service
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddressSearchInput"
+      responses:
+        "200":
+          description: Sanitized GeoJSON FeatureCollection (including empty results)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AddressSearchResults"
+        "400":
+          description: Invalid query
+        "429":
+          description: Shared capacity exhausted; Retry-After is provided
+        "503":
+          description: Provider not configured or temporarily unavailable
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+components:
+  schemas:
+    PassengerTransitStop:
+      type: object
+      required: [id, name, lat, lng, lines, transportTypes]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        lat: { type: number }
+        lng: { type: number }
+        lines: { type: array, items: { type: string } }
+        transportTypes: { type: array, items: { type: string, enum: [BUS, TRAM] } }
+    PassengerDeparture:
+      type: object
+      required: [id, stopId, tripId, lineName, lineNumber, transportType, headsign, departureTime, scheduledDepartureTime, expectedDepartureTime, delaySeconds, status, realtimeUpdatedAt]
+      properties:
+        id: { type: string }
+        stopId: { type: string }
+        tripId: { type: string }
+        lineName: { type: string }
+        lineNumber: { type: string }
+        transportType: { type: string, enum: [BUS, TRAM] }
+        headsign: { type: string }
+        departureTime: { type: string, format: date-time }
+        scheduledDepartureTime:
+          type: string
+          format: date-time
+          description: Planned time; departureTime remains the same for backwards compatibility.
+        expectedDepartureTime: { type: ["string", "null"], format: date-time }
+        delaySeconds: { type: ["integer", "null"] }
+        status: { type: string, enum: [SCHEDULED, UPDATED, CANCELLED, SKIPPED] }
+        realtimeUpdatedAt:
+          type: ["string", "null"]
+          format: date-time
+          description: Source timestamp, not download time. Only predictions no older than 120 seconds are used.
+    NearbyTransitStops:
+      type: object
+      required: [stops, generatedAt, cached, attribution]
+      properties:
+        stops: { type: array, items: { $ref: "#/components/schemas/PassengerTransitStop" } }
+        generatedAt: { type: string, format: date-time }
+        cached: { type: boolean }
+        attribution: { type: string }
+    TransitStopDepartures:
+      type: object
+      required: [stop, departures, generatedAt, cached, attribution, alerts, alertsStatus, alertsUpdatedAt]
+      properties:
+        stop: { $ref: "#/components/schemas/PassengerTransitStop" }
+        departures: { type: array, items: { $ref: "#/components/schemas/PassengerDeparture" } }
+        generatedAt: { type: string, format: date-time }
+        cached: { type: boolean }
+        attribution: { type: string }
+        alerts: { type: array, items: { $ref: "#/components/schemas/PassengerServiceAlert" } }
+        alertsStatus: { type: string, enum: [AVAILABLE, PARTIAL, UNAVAILABLE] }
+        alertsUpdatedAt: { type: ["string", "null"], format: date-time }
+    PassengerServiceAlert:
+      type: object
+      required: [id, title, description, effect, dataset, updatedAt, periods, appliesToStop, departureIds]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        description: { type: string }
+        effect: { type: integer }
+        dataset: { type: string, enum: [A, M, T] }
+        updatedAt: { type: string, format: date-time }
+        periods: { type: array, items: { $ref: "#/components/schemas/PassengerAlertPeriod" } }
+        appliesToStop: { type: boolean }
+        departureIds: { type: array, items: { type: string } }
+    PassengerAlertPeriod:
+      type: object
+      required: [start, end]
+      properties:
+        start: { type: ["string", "null"], format: date-time }
+        end: { type: ["string", "null"], format: date-time }
+    DemoActor:
+      type: object
+      required: [id, role]
+      properties:
+        id: { type: string }
+        role: { type: string, enum: [USER, CONDUCTOR, ADMIN] }
+    StaffPermissionInput:
+      type: object
+      additionalProperties: false
+      required: [role, disabled]
+      properties:
+        role: { type: string, enum: [USER, CONDUCTOR, ADMIN] }
+        disabled: { type: boolean }
+    StaffPermission:
+      type: object
+      required: [userId, role, disabled, updatedAt]
+      properties:
+        userId: { type: string }
+        role: { type: string, enum: [USER, CONDUCTOR, ADMIN] }
+        disabled: { type: boolean }
+        updatedAt: { type: string, format: date-time }
+    DemoSessionInput:
+      type: object
+      required: [role]
+      properties:
+        role: { type: string, enum: [USER, CONDUCTOR, ADMIN] }
+    VehicleCheckInInput:
+      type: object
+      required: [vehicleId, requestId]
+      properties:
+        vehicleId: { type: string, minLength: 1, maxLength: 150 }
+        requestId: { type: string, minLength: 8, maxLength: 100 }
+    TransportKind:
+      type: string
+      enum: [TRAM, BUS, TRAIN, METRO, TROLLEYBUS]
+    CityConfig:
+      type: object
+      required: [id, name, countryCode, availableTransportTypes, dataProvider, gtfsUrl, gtfsRealtimeUrl, isActive]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        countryCode: { type: string }
+        availableTransportTypes: { type: array, items: { $ref: "#/components/schemas/TransportKind" } }
+        dataProvider: { type: string, enum: [MOCK, GTFS] }
+        gtfsUrl: { type: string, nullable: true }
+        gtfsRealtimeUrl: { type: string, nullable: true }
+        isActive: { type: boolean }
+    TransportLine:
+      type: object
+      required: [id, cityId, number, transportType, direction]
+      properties:
+        id: { type: string }
+        cityId: { type: string }
+        number: { type: string }
+        transportType: { $ref: "#/components/schemas/TransportKind" }
+        direction: { type: string }
+    TransportVehicle:
+      type: object
+      required: [id, cityId, lineId, vehicleNumber, status, latitude, longitude, currentStopId, currentStopName]
+      properties:
+        id: { type: string }
+        cityId: { type: string }
+        lineId: { type: string }
+        vehicleNumber: { type: string }
+        status: { type: string, enum: [ACTIVE, CHECK_IN_LOCKED, OUT_OF_SERVICE] }
+        latitude: { type: number, nullable: true }
+        longitude: { type: number, nullable: true }
+        currentStopId: { type: string }
+        currentStopName: { type: string }
+    InspectionSession:
+      type: object
+      required: [id, cityId, conductorId, vehicleId, lineId, transportType, startedAt, endedAt, status, numberOfPassengersAlreadyCheckedIn, numberOfBlockedCheckInAttempts, requestId]
+      properties:
+        id: { type: string }
+        cityId: { type: string }
+        conductorId: { type: string }
+        vehicleId: { type: string }
+        lineId: { type: string }
+        transportType: { $ref: "#/components/schemas/TransportKind" }
+        startedAt: { type: string, description: Server UTC timestamp }
+        endedAt: { type: string, nullable: true }
+        status: { type: string, enum: [ACTIVE, FINISHED] }
+        numberOfPassengersAlreadyCheckedIn: { type: integer }
+        numberOfBlockedCheckInAttempts: { type: integer }
+        requestId: { type: string }
+    VehicleCheckIn:
+      type: object
+      required: [id, userId, vehicleId, cityId, lineId, checkInTime, checkOutTime, status, requestId]
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        vehicleId: { type: string }
+        cityId: { type: string }
+        lineId: { type: string }
+        checkInTime: { type: string }
+        checkOutTime: { type: string, nullable: true }
+        status: { type: string, enum: [ACTIVE, CHECKED_OUT] }
+        requestId: { type: string }
+    TransportOperation:
+      type: object
+      required: [requestId]
+      properties:
+        requestId: { type: string, minLength: 8, maxLength: 100 }
+    TransportCatalog:
+      type: object
+      required: [cities, lines, source, sourceNotice, feeds]
+      properties:
+        cities: { type: array, items: { $ref: "#/components/schemas/CityConfig" } }
+        lines: { type: array, items: { $ref: "#/components/schemas/TransportLine" } }
+        source: { type: string, enum: [MOCK, LIVE, CACHED, UNAVAILABLE] }
+        sourceNotice: { type: string }
+        feeds: { type: array, items: { $ref: "#/components/schemas/TransportFeedHealth" } }
+    TransportFeedHealth:
+      type: object
+      required: [cityId, dataset, kind, source, url, fetchedAt, feedTimestamp, notice]
+      properties:
+        cityId: { type: string }
+        dataset: { type: string }
+        kind: { type: string, enum: [STATIC, VEHICLES, TRIPS, ALERTS] }
+        source: { type: string, enum: [MOCK, LIVE, CACHED, UNAVAILABLE] }
+        url: { type: string, nullable: true }
+        fetchedAt: { type: string, nullable: true }
+        feedTimestamp: { type: string, nullable: true }
+        notice: { type: string }
+    TransportWorkspace:
+      type: object
+      required: [actor, vehicles, inspections, checkIns, updatedAt]
+      properties:
+        actor: { $ref: "#/components/schemas/DemoActor" }
+        vehicles: { type: array, items: { $ref: "#/components/schemas/TransportVehicle" } }
+        inspections: { type: array, items: { $ref: "#/components/schemas/InspectionSession" } }
+        checkIns: { type: array, items: { $ref: "#/components/schemas/VehicleCheckIn" } }
+        updatedAt: { type: string }
+    GoogleMapsConfig:
+      type: object
+      required: [apiKey]
+      properties:
+        apiKey: { type: string }
+    TransitCoordinate:
+      type: object
+      additionalProperties: false
+      required: [lat, lng]
+      properties:
+        lat: { type: number, minimum: -90, maximum: 90 }
+        lng: { type: number, minimum: -180, maximum: 180 }
+    TransitInput:
+      type: object
+      additionalProperties: false
+      required: [origin, destination]
+      properties:
+        origin: { $ref: "#/components/schemas/TransitCoordinate" }
+        destination: { $ref: "#/components/schemas/TransitCoordinate" }
+    TransitAgency:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        uri: { type: string }
+    TransitStep:
+      type: object
+      required: [mode, instruction, distanceMeters, durationSeconds]
+      properties:
+        mode: { type: string, enum: [WALK, TRANSIT, OTHER] }
+        instruction: { type: string }
+        distanceMeters: { type: ["number", "null"] }
+        durationSeconds: { type: ["number", "null"] }
+        polyline: { type: string }
+        lineName: { type: string }
+        lineShortName: { type: string }
+        lineColor: { type: string }
+        vehicleType: { type: string }
+        headsign: { type: string }
+        departureStop: { type: string }
+        arrivalStop: { type: string }
+        departureTime: { type: string }
+        arrivalTime: { type: string }
+        stopCount: { type: integer }
+        agencies:
+          type: array
+          items: { $ref: "#/components/schemas/TransitAgency" }
+    TransitRoute:
+      type: object
+      required: [id, distanceMeters, durationSeconds, polyline, transfers, steps]
+      properties:
+        id: { type: string }
+        distanceMeters: { type: ["number", "null"] }
+        durationSeconds: { type: ["number", "null"] }
+        polyline: { type: string }
+        transfers: { type: integer }
+        fareText: { type: string }
+        steps:
+          type: array
+          items: { $ref: "#/components/schemas/TransitStep" }
+    TransitResults:
+      type: object
+      required: [routes, provider, requestedAt]
+      properties:
+        provider: { type: string, enum: [google] }
+        requestedAt: { type: string }
+        routes:
+          type: array
+          items: { $ref: "#/components/schemas/TransitRoute" }
+    AddressSearchInput:
+      type: object
+      additionalProperties: false
+      required: [query]
+      properties:
+        query:
+          type: string
+          minLength: 3
+          maxLength: 200
+    AddressSearchResults:
+      type: object
+      required: [features, provider]
+      properties:
+        provider:
+          type: string
+          enum: [geoapify]
+        features:
+          type: array
+          maxItems: 8
+          items:
+            type: object
+            additionalProperties: true
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status

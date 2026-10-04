@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "FairRide Mobile",
+    "slug": "fairride-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/fairride-icon.png",
+    "scheme": "fairride-mobile",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "app.fairride.mobile",
+      "infoPlist": { "UIBackgroundModes": ["location"] }
+    },
+    "android": { "package": "app.fairride.mobile", "permissions": ["android.permission.POST_NOTIFICATIONS"] },
+    "web": {
+      "favicon": "./assets/images/fairride-icon.png"
+    },
+    "plugins": [
+      "expo-router",
+      ["expo-location", {
+        "locationWhenInUsePermission": "FairRide potrzebuje dokładnego GPS do wyboru startu i pomiaru przejazdu.",
+        "locationAlwaysAndWhenInUsePermission": "FairRide mierzy kilometry aktywnego przejazdu również przy zablokowanym ekranie. Pomiar kończy check-out.",
+        "isIosBackgroundLocationEnabled": true,
+        "isAndroidBackgroundLocationEnabled": true,
+        "isAndroidForegroundServiceEnabled": true
+      }],
+      "expo-sqlite",
+      ["expo-splash-screen", { "image": "./assets/images/fairride-icon.png", "backgroundColor": "#f5f3ec", "imageWidth": 160 }]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}

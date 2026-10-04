@@ -1,0 +1,15 @@
+.dl{min-height:100dvh;background:#f4f1e8;color:#1f3d32}
+.dl-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 16px;background:#fbfaf6;border-bottom:1px solid #e8e4d9}
+.dl-bar .brand,.dl-bar .nav-link{min-height:44px}
+.dl-bar .nav-link{padding:8px;font-size:12px}
+.dl-main{width:min(460px,100%);margin:0 auto;padding:24px 16px 40px;display:grid;gap:10px}
+.dl-main h1{font-size:28px;margin:4px 0 0}
+.dl-card{display:flex;align-items:center;gap:13px;width:100%;min-height:72px;padding:14px;border:1px solid #e5e2d9;border-radius:15px;background:#fffefa;text-align:left;color:#24483a;transition:transform .18s,border-color .18s}
+.dl-card:hover{transform:translateY(-2px);border-color:#a7c1ae}
+.dl-card:focus-visible{outline:3px solid #e6b65e;outline-offset:2px}
+.dl-ico{width:44px;height:44px;flex-shrink:0;display:grid;place-items:center;border-radius:14px;background:#e7efe7;color:#1c654f}
+.dl-txt{flex:1;min-width:0}
+.dl-txt strong{display:block;font-size:15px}
+.dl-txt span{display:block;font-size:12px;line-height:1.45;color:#758078;margin-top:2px}
+.dl-card svg:last-child{color:#86938a;flex-shrink:0}
+@media(prefers-reduced-motion:reduce){.dl-card{transition:none}.dl-card:hover{transform:none}}
